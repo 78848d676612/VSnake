@@ -5,6 +5,8 @@
 #include <conio.h>
 #include <process.h>
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wmissing-noreturn"
 #define true 1
 #define false 0
 #define boolean _Bool//参照stdbool.h
@@ -18,7 +20,11 @@
 #define _HEAD_DOWN "▼"
 #define _HEAD_LEFT "■"
 #define _HEAD_RIGHT "■"
-#define _TEST "█▇■"
+#define COLOR_WHITE 0x0F
+#define COLOR_GREEN 0x0A
+#define KEY_SPACE 32
+
+//#define _TEST "█▇■"
 
 typedef struct node {
     int position[2];
@@ -33,8 +39,7 @@ typedef enum {
 } direction;
 
 void onEnter();            // 游戏开始前的处理
-void gameMenu();            // 游戏菜单,可能会加个自动play
-
+//void gameMenu();            // 游戏菜单,可能会加个自动play
 void drawGameBorder();        // 绘制游戏边界
 void printInfo();                    // 显示提示信息
 DWORD WINAPI getInputFromKeyboard(LPVOID param);
@@ -43,7 +48,7 @@ void refreshSnake(snake *head, snake *tail, int food_position[2], direction dire
 
 boolean not_dead(snake *head, direction direct);//boolean
 
-boolean is_eating(snake *head, direction direct, int **food_position);//boolean//in move
+boolean is_eating(snake *head, direction direct, int **food_position);//boolean
 
 void initHead(snake **head);
 
@@ -63,12 +68,12 @@ int map_height = 30;
 //Y
 int length = 1;
 direction direct;
-unsigned int color = 0x0F;
 boolean moved = true;
 boolean playing = false;
+boolean pause = false;
+boolean notify = false;
 long speed = 300;
-HANDLE handle;
-FNCALLBACK onKeyDown;//回调
+HANDLE cursor;
 
 /**
  * 可以，在Windows下面，用CreateThread(
@@ -79,10 +84,12 @@ FNCALLBACK onKeyDown;//回调
  * DWORD   dwCreateionFlags,                    //5
  * LPDWORD   lpThreadId)                        //6
  * 函数可以创建一个线程
- * 第一个参数指线程的安全属性的设定，第二个参数表示线程堆栈的大小，第三个参数表示线程函数名称，第四个参数线程执行的参数，第五个参数指线程的优先级，最后一个参数指向线程的ID。
- * 关于windows下用C创建多线程可以查查MSDN即可。 如果还是不懂的话，建议楼主先弄懂计算机操作系统的原理，或者弄懂计算机线程与进程的异同与关系
- *
- *
+ * 第一个参数指线程的安全属性的设定，
+ * 第二个参数表示线程堆栈的大小，
+ * 第三个参数表示线程函数名称，
+ * 第四个参数线程执行的参数，
+ * 第五个参数指线程的优先级，
+ * 最后一个参数指向线程的ID。
  */
 
 int main() {
@@ -92,39 +99,64 @@ int main() {
     snake *head = NULL;
     srand((unsigned) time(NULL));
     onEnter();
-    while (1) {//游戏循环
+    while (true) {//游戏循环//假死循环，在子线程里有退出
         playing = true;
         HANDLE thread = CreateThread(NULL, 0, getInputFromKeyboard, param, THREAD_PRIORITY_NORMAL, NULL);
         drawGameBorder();
         initHead(&head);
         createFood(head, &food_position);
         direct = right;
-        while (not_dead(head, direct)) {//游戏中循环
-            moveBody(&head, direct, &food_position);
-            printLength();
-            moved = true;
+        printInfo();
+        while (not_dead(head, direct) && (last_input != 27 || last_input != KEY_SPACE)) {//游戏中循环
+            if (pause) {
+                if (notify) {
+                    printAtXY(map_width + 1, map_height - 3, COLOR_GREEN, "按任意键继续游戏");
+                } else {
+                    printAtXY(map_width + 1, map_height - 3, COLOR_GREEN, "               ");
+                }
+            } else {
+                moveBody(&head, direct, &food_position);
+                printLength();
+                moved = true;
+                pause = false;
+            }
+            notify = !notify;
             Sleep((DWORD) speed);
         }
+        notify = false;
         playing = false;
-        printAtXY(3, 3, 0x0f, "Game Over!");
-        printAtXY(3, 4, 0x0f, "Press E/e to exit,press the other key to replay");
         CloseHandle(thread);
         fflush(stdin);
-        char key = (char) _getch();
-        if (key == 'e' || key == 'E') {
-            break;
+        char tmp_input = last_input;
+        while (1) {
+            if (tmp_input != last_input) {
+                break;
+            } else {
+                if (notify) {
+                    printAtXY(3, 3, COLOR_WHITE, "Game Over!");
+                    printAtXY(3, 4, COLOR_WHITE, "Press E/e to exit,press the other key to replay");
+                } else {
+                    printAtXY(3, 3, COLOR_WHITE, "          ");
+                    printAtXY(3, 4, COLOR_WHITE, "                                                ");
+                }
+                notify = !notify;
+                Sleep(300);
+            }
         }
-        printAtXY(3, 3, 0x0f, "          ");
-        printAtXY(3, 4, 0x0f, "                                                ");
-        printAtXY(food_position[_X], food_position[_Y], 0x0f, "  ");
+        notify = false;
+        free(&tmp_input);
+        printAtXY(3, 3, COLOR_WHITE, "          ");
+        printAtXY(3, 4, COLOR_WHITE, "                                                ");
+        printAtXY(food_position[_X], food_position[_Y], COLOR_WHITE, "  ");
         snake *tmp;
         while (head != NULL) {
             tmp = head;
-            printAtXY(head->position[_X], head->position[_Y], 0x0f, "  ");
+            printAtXY(head->position[_X], head->position[_Y], COLOR_WHITE, "  ");
             head = tmp->next;
             free(tmp);
         }
         length = 1;
+        fflush(stdin);
     }
     return 0;
 }
@@ -171,7 +203,7 @@ void moveBody(snake **head, direction direct, int **food_position) {
 void createFood(snake *head, int **food_position) {
     *food_position = (int *) malloc(2 * sizeof(int));
     int repeat = 0;
-    while (1) {
+    while (true) {
         snake *tmp = head;
         (*food_position)[_X] = (unsigned) rand() % (map_width - 2) + 1;
         (*food_position)[_Y] = (unsigned) rand() % (map_height - 2) + 1;
@@ -182,7 +214,6 @@ void createFood(snake *head, int **food_position) {
             tmp = tmp->next;
         }
         if (repeat == 0) {
-//            printf("food_position------>x:%d,y:%d\n", food_position[_X], food_position[_Y]);
             break;
         }
         repeat = 0;
@@ -216,7 +247,7 @@ boolean is_eating(snake *head, direction direct, int **food_position) {
     int *next_position = directionToPosition(position, direct);
     if (next_position[_X] == (*food_position)[_X] && next_position[_Y] == (*food_position)[_Y]) {
         createFood(head, food_position);
-        if (length < MAX_LEN) {//当长度达到地图的一半（其实不止一半）时，长度不再增加
+        if (length < MAX_LEN) {//当长度达到地图的一半（其实不止一半）时，长度不再增加,其实是为了减小难度，在想后面加障碍不
             length++;
             return true;
         }
@@ -231,27 +262,27 @@ void refreshSnake(snake *head, snake *tail, int *food_position, direction direct
     snake *tmp = head->next;
     switch (direct) {
         case up:
-            printAtXY(head->position[_X], head->position[_Y], color, _HEAD_UP);
+            printAtXY(head->position[_X], head->position[_Y], COLOR_WHITE, _HEAD_UP);
             break;
         case down:
-            printAtXY(head->position[_X], head->position[_Y], color, _HEAD_DOWN);
+            printAtXY(head->position[_X], head->position[_Y], COLOR_WHITE, _HEAD_DOWN);
             break;
         case left:
-            printAtXY(head->position[_X], head->position[_Y], color, _HEAD_LEFT);
+            printAtXY(head->position[_X], head->position[_Y], COLOR_WHITE, _HEAD_LEFT);
             break;
         case right:
-            printAtXY(head->position[_X], head->position[_Y], color, _HEAD_RIGHT);
+            printAtXY(head->position[_X], head->position[_Y], COLOR_WHITE, _HEAD_RIGHT);
             break;
     }
     while (tmp != NULL && tmp != tail) {
-        printAtXY(tmp->position[_X], tmp->position[_Y], color, _BODY);
+        printAtXY(tmp->position[_X], tmp->position[_Y], COLOR_WHITE, _BODY);
         tmp = tmp->next;
     }
     if (tail != NULL) {
-        printAtXY(tail->position[_X], tail->position[_Y], color, _NONE);
+        printAtXY(tail->position[_X], tail->position[_Y], COLOR_WHITE, _NONE);
         free(tail);//free尾
     }
-    printAtXY(food_position[_X], food_position[_Y], color, _FOOD);
+    printAtXY(food_position[_X], food_position[_Y], COLOR_WHITE, _FOOD);
 }
 
 int *directionToPosition(int position[2], direction direct) {
@@ -277,9 +308,9 @@ void printAtXY(int x, int y, unsigned color, char *ch) {
     pos.X = (SHORT) (x << 1);
     pos.Y = (SHORT) y;
     // 移动到目标
-    SetConsoleTextAttribute(handle, (WORD) color);
+    SetConsoleTextAttribute(cursor, (WORD) color);
     // 设置颜色
-    SetConsoleCursorPosition(handle, pos);
+    SetConsoleCursorPosition(cursor, pos);
     printf("%s", ch);
 }
 
@@ -289,34 +320,40 @@ void drawGameBorder() {
         for (j = 0; j < map_width; j++) {//行
             if (((i == 0 || i == map_height - 1) && i <= map_width) || (j == 0) ||
                 (j == map_width - 1)) {//可以分开画成不同的边界，为了省事，直接统一吧。。。
-                printAtXY(j, i, color, _BODY);
+                printAtXY(j, i, COLOR_WHITE, _BODY);
             }
         }
     }
-    printAtXY(map_width + 1, map_height - 4, 0x0A, "w,s,a,d操作");
-    printAtXY(map_width + 1, map_height - 3, 0x0A, "空格,esc暂停");
+    printInfo();
 }
 
 void onEnter() {
-    handle = GetStdHandle(STD_OUTPUT_HANDLE);        // 获取标准输出句柄
+    cursor = GetStdHandle(STD_OUTPUT_HANDLE);        // 获取标准输出句柄
     CONSOLE_CURSOR_INFO cursorInfo = {1, false};            // 光标信息
-    SetConsoleCursorInfo(handle, &cursorInfo);    // 隐藏光标
+    SetConsoleCursorInfo(cursor, &cursorInfo);    // 隐藏光标
     system("title VSnake");        // 设置控制台窗口标题
 }
 
 DWORD WINAPI getInputFromKeyboard(LPVOID param) {
     char *last_input = param;
-    while (playing) {
+    while (true) {
         char input = (char) _getch();
-        *last_input = input;
-        // 暂停
-        if (input == 27 || input == 32) {
-            printAtXY(map_width + 1, 8, 0x0A, "按任意键继续游戏");
-            system("pause 1>nul");
-            printAtXY(map_width + 1, 3, 0x0A, "               ");
-            fflush(stdin);
+        if (!playing) {
+            if (input == 'e' || input == 'E') {
+                exit(0);
+            } else {
+                *last_input = input;
+            }
         }
-        if (moved) {
+        if (input == KEY_SPACE) {
+            if (*last_input == KEY_SPACE) {
+                pause = false;
+            } else {
+                pause = true;
+            }
+        }
+        *last_input = input;
+        if (moved && !pause) {
             switch (input) {
                 case 38:
                 case 'w':    // 上
@@ -342,7 +379,8 @@ DWORD WINAPI getInputFromKeyboard(LPVOID param) {
                         direct = right;
                     }
                     break;
-                default:break;
+                default:
+                    break;
             }
             moved = false;
         }
@@ -352,8 +390,18 @@ DWORD WINAPI getInputFromKeyboard(LPVOID param) {
 
 
 void printLength() {
-    printAtXY(map_width + 1, 2, 0x0A, "Snake length:");
+    printAtXY(map_width + 1, 2, COLOR_GREEN, "Snake length:");
     printf("%d", length);
 }
 
+void printInfo() {
+    printAtXY(map_width + 1, 4, COLOR_GREEN, "游戏提示:");
+    printAtXY(map_width + 1, 5, COLOR_GREEN, "w,s,a,d操作");
+    printAtXY(map_width + 1, 6, COLOR_GREEN, "空格,esc暂停");
+}
 
+/*void autoPlay() {
+
+}*/
+
+#pragma clang diagnostic pop
