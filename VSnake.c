@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <windows.h>
 #include <conio.h>
-#include <process.h>
+#include "Base64.c"
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wmissing-noreturn"
@@ -37,10 +37,16 @@ typedef enum { //为了自动算法好写点，把值固定
     none = 0
 } direction;
 
-void onEnter();            // 游戏开始前的处理
-boolean gameMenu();            // 游戏菜单,可能会加个自动play//返回choice
-void drawGameBorder();        // 绘制游戏边界
-void printInfo();                    // 显示提示信息
+void onEnter();
+
+boolean gameMenu();
+
+void drawGameBorder();
+
+void printInfo();
+
+void removeInfo();
+
 DWORD WINAPI getInputFromKeyboard(LPVOID param);
 
 void refreshSnake(snake *head, snake *tail, int food_position[2], direction direct);//refresh screen
@@ -65,19 +71,24 @@ void autoPlay(snake *head, int food_position[2]);
 
 void inputToDirection(char input);
 
+void storeMaxScore(int max_score);
+
+int getMaxScore();
+
 direction turn(snake *head, direction *_direction);
 
 int map_width = 50;
 int map_height = 30;
 int length = 1;
 int score = 0;
+int max_score;
 direction direct;
 boolean moved = true;
 boolean playing = false;
 boolean pause = false;
 boolean notify = false;
 boolean auto_play = false;
-long speed = 100;
+long speed = 200;
 HANDLE cursor;
 HANDLE control_thread;
 
@@ -89,10 +100,11 @@ int main() {
     srand((unsigned) time(NULL));
     onEnter();
     auto_play = gameMenu();
+    max_score = getMaxScore();
+    drawGameBorder();
     while (true) {//游戏循环//假死循环，在子线程里有退出
         playing = true;
         control_thread = CreateThread(NULL, 0, getInputFromKeyboard, param, THREAD_PRIORITY_NORMAL, NULL);
-        drawGameBorder();
         initHead(&head);
         createFood(head, &food_position);
         direct = right;
@@ -116,6 +128,10 @@ int main() {
             notify = !notify;
             Sleep((DWORD) speed);
         }
+        if (score > max_score) {
+            storeMaxScore(score);
+            max_score = score;
+        }
         notify = false;
         playing = false;
         if (!auto_play) {
@@ -123,6 +139,7 @@ int main() {
         }
         fflush(stdin);
         last_input = 0;//清空上次输入
+        removeInfo();
         while (1) {
             if (last_input == 'A' || last_input == 'a') {
                 auto_play = true;
@@ -333,7 +350,6 @@ void drawGameBorder() {
             }
         }
     }
-    printInfo();
 }
 
 void onEnter() {
@@ -373,12 +389,28 @@ void printLengthAndScore() {
     printf("%d", length);
     printAtXY(map_width + 1, 3, COLOR_GREEN, "Score:");
     printf("%d", score);
+    printAtXY(map_width + 1, 4, COLOR_GREEN, "Max Score:");
+    printf("%d", max_score);
 }
 
 void printInfo() {
-    printAtXY(map_width + 1, 4, COLOR_GREEN, "游戏提示:");
-    printAtXY(map_width + 1, 5, COLOR_GREEN, "w,s,a,d操作");
-    printAtXY(map_width + 1, 6, COLOR_GREEN, "空格,esc暂停");
+    if (auto_play) {
+        printAtXY(map_width + 1, 6, COLOR_GREEN, "自动中");
+    } else {
+        printAtXY(map_width + 1, 6, COLOR_GREEN, "游戏提示:");
+        printAtXY(map_width + 1, 7, COLOR_GREEN, "w,s,a,d操作");
+        printAtXY(map_width + 1, 8, COLOR_GREEN, "空格,esc暂停");
+    }
+}
+
+void removeInfo() {
+    if (auto_play) {
+        printAtXY(map_width + 1, 6, COLOR_GREEN, "      ");
+    } else {
+        printAtXY(map_width + 1, 6, COLOR_GREEN, "         ");
+        printAtXY(map_width + 1, 7, COLOR_GREEN, "           ");
+        printAtXY(map_width + 1, 8, COLOR_GREEN, "            ");
+    }
 }
 
 boolean gameMenu() {
@@ -392,13 +424,13 @@ boolean gameMenu() {
     switch (tmp) {
         case 'a':
         case 'A':
-            printAtXY(6, 4, COLOR_GREEN, "      ");
+            printAtXY(6, 4, COLOR_WHITE, "      ");
             printAtXY(3, 5, COLOR_WHITE, "                ");
             printAtXY(3, 6, COLOR_WHITE, "                 ");
             return true;
         case 's':
         case 'S':
-            printAtXY(6, 4, COLOR_GREEN, "      ");
+            printAtXY(6, 4, COLOR_WHITE, "      ");
             printAtXY(3, 5, COLOR_WHITE, "                ");
             printAtXY(3, 6, COLOR_WHITE, "                 ");
             return false;
@@ -485,6 +517,25 @@ void inputToDirection(char input) {
         }
         moved = false;
     }
+}
+
+void storeMaxScore(int score) {
+    char *out, score_char[5];
+    itoa(score, score_char, 10);
+    out = base64_encode(score_char, sizeof(score_char));
+    FILE *score_file = fopen("scores", "wb");
+    fwrite(out, sizeof(out), 1, score_file);
+    fclose(score_file);
+}
+
+int getMaxScore() {
+    char in[9];
+    int i = 0;
+    FILE *score_file = fopen("scores", "rb");
+    while (~(in[i] = (char) fgetc(score_file)))i++;
+    in[i] = 0;
+    fclose(score_file);
+    return atoi(base64_decode(in, sizeof(in)));
 }
 
 #pragma clang diagnostic pop
