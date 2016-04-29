@@ -13,18 +13,16 @@
 #define _X 0
 #define _Y 1
 #define MAX_LEN map_height * map_width / 2
-#define _NONE " "
+#define _NONE "  "
 #define _FOOD "●"
 #define _BODY "■"
 #define _HEAD_UP "▲"
 #define _HEAD_DOWN "▼"
-#define _HEAD_LEFT "<"//左右三角形显示不出来= =??
+#define _HEAD_LEFT "<"//左右三角形显示不出来= =,就像这样------->??
 #define _HEAD_RIGHT ">"
 #define COLOR_WHITE 0x0F
 #define COLOR_GREEN 0x0A
 #define KEY_SPACE 32
-
-//#define _TEST "█▇■"
 
 typedef struct node {
     int position[2];
@@ -70,9 +68,7 @@ void inputToDirection(char input);
 direction turn(snake *head, direction *_direction);
 
 int map_width = 50;
-//X
 int map_height = 30;
-//Y
 int length = 1;
 int score = 0;
 direction direct;
@@ -81,26 +77,9 @@ boolean playing = false;
 boolean pause = false;
 boolean notify = false;
 boolean auto_play = false;
-long speed = 300;
+long speed = 100;
 HANDLE cursor;
 HANDLE control_thread;
-
-/**
- * 可以，在Windows下面，用CreateThread(
- * LPSECURITY_ATTRIBUTES   lpThreadAttributes,  //1
- * DWORD   dwStackSize,                         //2
- * LPTHREAD_START_ROUTINE   lpStartAddress,     //3
- * LPVOID   lpParameter,                        //4
- * DWORD   dwCreateionFlags,                    //5
- * LPDWORD   lpThreadId)                        //6
- * 函数可以创建一个线程
- * 第一个参数指线程的安全属性的设定，
- * 第二个参数表示线程堆栈的大小，
- * 第三个参数表示线程函数名称，
- * 第四个参数线程执行的参数，
- * 第五个参数指线程的优先级，
- * 最后一个参数指向线程的ID。
- */
 
 int main() {
     int *food_position;
@@ -109,8 +88,8 @@ int main() {
     snake *head = NULL;
     srand((unsigned) time(NULL));
     onEnter();
+    auto_play = gameMenu();
     while (true) {//游戏循环//假死循环，在子线程里有退出
-        auto_play = gameMenu();
         playing = true;
         control_thread = CreateThread(NULL, 0, getInputFromKeyboard, param, THREAD_PRIORITY_NORMAL, NULL);
         drawGameBorder();
@@ -126,10 +105,10 @@ int main() {
                     printAtXY(map_width + 1, map_height - 3, COLOR_GREEN, "               ");
                 }
             } else {
+                moveBody(&head, direct, &food_position);
                 if (auto_play) {
                     autoPlay(head, food_position);
                 }
-                moveBody(&head, direct, &food_position);
                 printLengthAndScore();
                 moved = true;
                 pause = false;
@@ -143,31 +122,40 @@ int main() {
             CloseHandle(control_thread);
         }
         fflush(stdin);
-        char tmp_input = last_input;
+        last_input = 0;//清空上次输入
         while (1) {
-            if (tmp_input != last_input) {
+            if (last_input == 'A' || last_input == 'a') {
+                auto_play = true;
+                break;
+            } else if (last_input == 'S' || last_input == 's') {
+                auto_play = false;
                 break;
             } else {
                 if (notify) {
                     printAtXY(3, 3, COLOR_WHITE, "Game Over!");
-                    printAtXY(3, 4, COLOR_WHITE, "Press E/e to exit,press the other key to replay");
+                    printAtXY(3, 4, COLOR_WHITE, "E/e to exit");
+                    printAtXY(3, 5, COLOR_WHITE, "A/a to auto play");
+                    printAtXY(3, 6, COLOR_WHITE, "S/s to start play");
                 } else {
                     printAtXY(3, 3, COLOR_WHITE, "          ");
-                    printAtXY(3, 4, COLOR_WHITE, "                                                ");
+                    printAtXY(3, 4, COLOR_WHITE, "                                         ");
+                    printAtXY(3, 5, COLOR_WHITE, "                ");
+                    printAtXY(3, 6, COLOR_WHITE, "                 ");
                 }
                 notify = !notify;
-                Sleep(300);
+                Sleep(500);
             }
         }
         notify = false;
-        free(&tmp_input);
         printAtXY(3, 3, COLOR_WHITE, "          ");
-        printAtXY(3, 4, COLOR_WHITE, "                                                ");
-        printAtXY(food_position[_X], food_position[_Y], COLOR_WHITE, "  ");
+        printAtXY(3, 4, COLOR_WHITE, "           ");
+        printAtXY(3, 5, COLOR_WHITE, "                ");
+        printAtXY(3, 6, COLOR_WHITE, "                 ");
+        printAtXY(food_position[_X], food_position[_Y], COLOR_WHITE, _NONE);
         snake *tmp;
         while (head != NULL) {
             tmp = head;
-            printAtXY(head->position[_X], head->position[_Y], COLOR_WHITE, "  ");
+            printAtXY(head->position[_X], head->position[_Y], COLOR_WHITE, _NONE);
             head = tmp->next;
             free(tmp);
         }
@@ -242,7 +230,7 @@ boolean not_dead(snake *head, direction direct) {
     position[_X] = head->position[_X];
     position[_Y] = head->position[_Y];
     int *next_position = directionToPosition(position, direct);
-    if (next_position[_X] < 0 || next_position[_X] > map_width - 2 || next_position[_Y] < 0 ||
+    if (next_position[_X] < 1 || next_position[_X] > map_width - 2 || next_position[_Y] < 1 ||
         next_position[_Y] > map_height - 2) {//边界
         return false;
     } else {
@@ -362,8 +350,6 @@ DWORD WINAPI getInputFromKeyboard(LPVOID param) {
         if (!playing) {
             if (input == 'e' || input == 'E') {
                 exit(0);
-            } else {
-                *last_input = input;
             }
         }
         if (input == KEY_SPACE) {
@@ -382,7 +368,6 @@ DWORD WINAPI getInputFromKeyboard(LPVOID param) {
     return 0;
 }
 
-
 void printLengthAndScore() {
     printAtXY(map_width + 1, 2, COLOR_GREEN, "Snake length:");
     printf("%d", length);
@@ -397,9 +382,9 @@ void printInfo() {
 }
 
 boolean gameMenu() {
-    printAtXY(map_width / 2 - 5, map_height / 2 - 1, COLOR_GREEN, "贪吃蛇");
-    printAtXY(map_width / 2 - 5, map_height / 2, COLOR_GREEN, "A:自动play");
-    printAtXY(map_width / 2 - 5, map_height / 2 + 1, COLOR_GREEN, "S:开始游戏");
+    printAtXY(6, 4, COLOR_WHITE, "Snake");
+    printAtXY(3, 5, COLOR_WHITE, "A/a to auto play");
+    printAtXY(3, 6, COLOR_WHITE, "S/s to start play");
     char tmp = 0;
     while (tmp != 'a' && tmp != 's' && tmp != 'A' && tmp != 'S') {
         tmp = (char) _getch();
@@ -407,15 +392,15 @@ boolean gameMenu() {
     switch (tmp) {
         case 'a':
         case 'A':
-            printAtXY(map_width / 2 - 5, map_height / 2 - 1, COLOR_GREEN, "      ");
-            printAtXY(map_width / 2 - 5, map_height / 2, COLOR_GREEN, "          ");
-            printAtXY(map_width / 2 - 5, map_height / 2 + 1, COLOR_GREEN, "         ");
+            printAtXY(6, 4, COLOR_GREEN, "      ");
+            printAtXY(3, 5, COLOR_WHITE, "                ");
+            printAtXY(3, 6, COLOR_WHITE, "                 ");
             return true;
         case 's':
         case 'S':
-            printAtXY(map_width / 2 - 5, map_height / 2 - 1, COLOR_GREEN, "      ");
-            printAtXY(map_width / 2 - 5, map_height / 2, COLOR_GREEN, "          ");
-            printAtXY(map_width / 2 - 5, map_height / 2 + 1, COLOR_GREEN, "         ");
+            printAtXY(6, 4, COLOR_GREEN, "      ");
+            printAtXY(3, 5, COLOR_WHITE, "                ");
+            printAtXY(3, 6, COLOR_WHITE, "                 ");
             return false;
         default:
             break;
@@ -456,18 +441,17 @@ void autoPlay(snake *head, int food_position[2]) {//根据蛇蛇身和食物判断该怎么走
         }
     } else {//头左食物右
         if (vertical == 0) {//同一水平线
-            direction _direction[] = {down, left, right, none};
+            direction _direction[] = {right, down, up, none};
             direct = turn(head, _direction);
         } else if (vertical < 0) {//头左上食物右下
             direction _direction[] = {right, down, left, up, none};
             direct = turn(head, _direction);
-        } else {//头右上食物左下
-            direction _direction[] = {left, down, up, right, none};
+        } else {//头左下食物右上
+            direction _direction[] = {right, up, down, left, none};
             direct = turn(head, _direction);
         }
     }
 }
-
 
 void inputToDirection(char input) {
     if (moved && !pause) {
