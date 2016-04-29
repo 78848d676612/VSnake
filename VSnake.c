@@ -18,8 +18,8 @@
 #define _BODY "■"
 #define _HEAD_UP "▲"
 #define _HEAD_DOWN "▼"
-#define _HEAD_LEFT "■"
-#define _HEAD_RIGHT "■"
+#define _HEAD_LEFT "<"//左右三角形显示不出来= =??
+#define _HEAD_RIGHT ">"
 #define COLOR_WHITE 0x0F
 #define COLOR_GREEN 0x0A
 #define KEY_SPACE 32
@@ -31,15 +31,16 @@ typedef struct node {
     struct node *next;
 } snake;
 
-typedef enum {
-    up,
-    down,
-    left,
-    right
+typedef enum { //为了自动算法好写点，把值固定
+    up = 2,
+    down = -2,
+    left = -1,
+    right = 1,
+    none = 0
 } direction;
 
 void onEnter();            // 游戏开始前的处理
-//void gameMenu();            // 游戏菜单,可能会加个自动play
+boolean gameMenu();            // 游戏菜单,可能会加个自动play//返回choice
 void drawGameBorder();        // 绘制游戏边界
 void printInfo();                    // 显示提示信息
 DWORD WINAPI getInputFromKeyboard(LPVOID param);
@@ -60,20 +61,29 @@ int *directionToPosition(int position[2], direction direct);
 
 void printAtXY(int x, int y, unsigned color, char *ch);
 
-void printLength();
+void printLengthAndScore();
+
+void autoPlay(snake *head, int food_position[2]);
+
+void inputToDirection(char input);
+
+direction turn(snake *head, direction *_direction);
 
 int map_width = 50;
 //X
 int map_height = 30;
 //Y
 int length = 1;
+int score = 0;
 direction direct;
 boolean moved = true;
 boolean playing = false;
 boolean pause = false;
 boolean notify = false;
+boolean auto_play = false;
 long speed = 300;
 HANDLE cursor;
+HANDLE control_thread;
 
 /**
  * 可以，在Windows下面，用CreateThread(
@@ -100,8 +110,9 @@ int main() {
     srand((unsigned) time(NULL));
     onEnter();
     while (true) {//游戏循环//假死循环，在子线程里有退出
+        auto_play = gameMenu();
         playing = true;
-        HANDLE thread = CreateThread(NULL, 0, getInputFromKeyboard, param, THREAD_PRIORITY_NORMAL, NULL);
+        control_thread = CreateThread(NULL, 0, getInputFromKeyboard, param, THREAD_PRIORITY_NORMAL, NULL);
         drawGameBorder();
         initHead(&head);
         createFood(head, &food_position);
@@ -115,8 +126,11 @@ int main() {
                     printAtXY(map_width + 1, map_height - 3, COLOR_GREEN, "               ");
                 }
             } else {
+                if (auto_play) {
+                    autoPlay(head, food_position);
+                }
                 moveBody(&head, direct, &food_position);
-                printLength();
+                printLengthAndScore();
                 moved = true;
                 pause = false;
             }
@@ -125,7 +139,9 @@ int main() {
         }
         notify = false;
         playing = false;
-        CloseHandle(thread);
+        if (!auto_play) {
+            CloseHandle(control_thread);
+        }
         fflush(stdin);
         char tmp_input = last_input;
         while (1) {
@@ -156,6 +172,7 @@ int main() {
             free(tmp);
         }
         length = 1;
+        score = 0;
         fflush(stdin);
     }
     return 0;
@@ -249,9 +266,9 @@ boolean is_eating(snake *head, direction direct, int **food_position) {
         createFood(head, food_position);
         if (length < MAX_LEN) {//当长度达到地图的一半（其实不止一半）时，长度不再增加,其实是为了减小难度，在想后面加障碍不
             length++;
-            return true;
         }
-        return false;
+        score++;
+        return true;
     } else {
         return false;
     }
@@ -272,6 +289,8 @@ void refreshSnake(snake *head, snake *tail, int *food_position, direction direct
             break;
         case right:
             printAtXY(head->position[_X], head->position[_Y], COLOR_WHITE, _HEAD_RIGHT);
+            break;
+        default:
             break;
     }
     while (tmp != NULL && tmp != tail) {
@@ -298,6 +317,8 @@ int *directionToPosition(int position[2], direction direct) {
             break;
         case right:
             position[_X]++;
+            break;
+        default:
             break;
     }
     return position;
@@ -353,45 +374,20 @@ DWORD WINAPI getInputFromKeyboard(LPVOID param) {
             }
         }
         *last_input = input;
-        if (moved && !pause) {
-            switch (input) {
-                case 38:
-                case 'w':    // 上
-                    if (direct != down) {
-                        direct = up;
-                    }
-                    break;
-                case 40:
-                case 's': //下
-                    if (direct != up) {
-                        direct = down;
-                    }
-                    break;
-                case 37:
-                case 'a': // 左
-                    if (direct != right) {
-                        direct = left;
-                    }
-                    break;
-                case 39:
-                case 'd':  // 右
-                    if (direct != left) {
-                        direct = right;
-                    }
-                    break;
-                default:
-                    break;
-            }
-            moved = false;
+        if (auto_play) {
+            continue;
         }
+        inputToDirection(input);
     }
     return 0;
 }
 
 
-void printLength() {
+void printLengthAndScore() {
     printAtXY(map_width + 1, 2, COLOR_GREEN, "Snake length:");
     printf("%d", length);
+    printAtXY(map_width + 1, 3, COLOR_GREEN, "Score:");
+    printf("%d", score);
 }
 
 void printInfo() {
@@ -400,8 +396,111 @@ void printInfo() {
     printAtXY(map_width + 1, 6, COLOR_GREEN, "空格,esc暂停");
 }
 
-/*void autoPlay() {
+boolean gameMenu() {
+    printAtXY(map_width / 2 - 5, map_height / 2 - 1, COLOR_GREEN, "贪吃蛇");
+    printAtXY(map_width / 2 - 5, map_height / 2, COLOR_GREEN, "A:自动play");
+    printAtXY(map_width / 2 - 5, map_height / 2 + 1, COLOR_GREEN, "S:开始游戏");
+    char tmp = 0;
+    while (tmp != 'a' && tmp != 's' && tmp != 'A' && tmp != 'S') {
+        tmp = (char) _getch();
+    }
+    switch (tmp) {
+        case 'a':
+        case 'A':
+            printAtXY(map_width / 2 - 5, map_height / 2 - 1, COLOR_GREEN, "      ");
+            printAtXY(map_width / 2 - 5, map_height / 2, COLOR_GREEN, "          ");
+            printAtXY(map_width / 2 - 5, map_height / 2 + 1, COLOR_GREEN, "         ");
+            return true;
+        case 's':
+        case 'S':
+            printAtXY(map_width / 2 - 5, map_height / 2 - 1, COLOR_GREEN, "      ");
+            printAtXY(map_width / 2 - 5, map_height / 2, COLOR_GREEN, "          ");
+            printAtXY(map_width / 2 - 5, map_height / 2 + 1, COLOR_GREEN, "         ");
+            return false;
+        default:
+            break;
+    }
+    return false;
+}
 
-}*/
+direction turn(snake *head, direction *_direction) {
+    if (*_direction == none) {//遍历完了，没有解决方案
+        return direct;
+    }
+    if (*_direction != -direct && not_dead(head, *_direction)) {
+        return *_direction;
+    } else return turn(head, _direction + 1);
+}
+
+void autoPlay(snake *head, int food_position[2]) {//根据蛇蛇身和食物判断该怎么走，边界为全局变量，直接读取
+    int horizontal = head->position[_X] - food_position[_X];
+    int vertical = head->position[_Y] - food_position[_Y];
+    if (horizontal == 0) {//一条竖线上
+        if (vertical < 0) {//头上食物下
+            direction _direction[] = {down, right, left, none};
+            direct = turn(head, _direction);
+        } else {//头下食物上
+            direction _direction[] = {up, right, left, none};
+            direct = turn(head, _direction);
+        }
+    } else if (horizontal > 0) {//头右食物左
+        if (vertical == 0) {//同一水平线
+            direction _direction[] = {left, up, down, none};
+            direct = turn(head, _direction);
+        } else if (vertical < 0) {//头右上食物左下
+            direction _direction[] = {left, down, up, right, none};
+            direct = turn(head, _direction);
+        } else {//头右下食物左上
+            direction _direction[] = {left, up, right, down, none};
+            direct = turn(head, _direction);
+        }
+    } else {//头左食物右
+        if (vertical == 0) {//同一水平线
+            direction _direction[] = {down, left, right, none};
+            direct = turn(head, _direction);
+        } else if (vertical < 0) {//头左上食物右下
+            direction _direction[] = {right, down, left, up, none};
+            direct = turn(head, _direction);
+        } else {//头右上食物左下
+            direction _direction[] = {left, down, up, right, none};
+            direct = turn(head, _direction);
+        }
+    }
+}
+
+
+void inputToDirection(char input) {
+    if (moved && !pause) {
+        switch (input) {
+            case 38:
+            case 'w':    // 上
+                if (direct != down) {
+                    direct = up;
+                }
+                break;
+            case 40:
+            case 's': //下
+                if (direct != up) {
+                    direct = down;
+                }
+                break;
+            case 37:
+            case 'a': // 左
+                if (direct != right) {
+                    direct = left;
+                }
+                break;
+            case 39:
+            case 'd':  // 右
+                if (direct != left) {
+                    direct = right;
+                }
+                break;
+            default:
+                break;
+        }
+        moved = false;
+    }
+}
 
 #pragma clang diagnostic pop
