@@ -47,6 +47,10 @@ void printInfo();
 
 void removeInfo();
 
+void printMenu();
+
+void removeMenu();
+
 DWORD WINAPI getInputFromKeyboard(LPVOID param);
 
 void refreshSnake(snake *head, snake *tail, int food_position[2], direction direct);//refresh screen
@@ -149,25 +153,16 @@ int main() {
                 break;
             } else {
                 if (notify) {
-                    printAtXY(3, 3, COLOR_WHITE, "Game Over!");
-                    printAtXY(3, 4, COLOR_WHITE, "E/e to exit");
-                    printAtXY(3, 5, COLOR_WHITE, "A/a to auto play");
-                    printAtXY(3, 6, COLOR_WHITE, "S/s to start play");
+                    printMenu();
                 } else {
-                    printAtXY(3, 3, COLOR_WHITE, "          ");
-                    printAtXY(3, 4, COLOR_WHITE, "                                         ");
-                    printAtXY(3, 5, COLOR_WHITE, "                ");
-                    printAtXY(3, 6, COLOR_WHITE, "                 ");
+                    removeMenu();
                 }
                 notify = !notify;
                 Sleep(500);
             }
         }
         notify = false;
-        printAtXY(3, 3, COLOR_WHITE, "          ");
-        printAtXY(3, 4, COLOR_WHITE, "           ");
-        printAtXY(3, 5, COLOR_WHITE, "                ");
-        printAtXY(3, 6, COLOR_WHITE, "                 ");
+        removeMenu();
         printAtXY(food_position[_X], food_position[_Y], COLOR_WHITE, _NONE);
         snake *tmp;
         while (head != NULL) {
@@ -413,6 +408,20 @@ void removeInfo() {
     }
 }
 
+void printMenu() {
+    printAtXY(3, 3, COLOR_WHITE, "Game Over!");
+    printAtXY(3, 4, COLOR_WHITE, "E/e to exit");
+    printAtXY(3, 5, COLOR_WHITE, "A/a to auto play");
+    printAtXY(3, 6, COLOR_WHITE, "S/s to start play");
+}
+
+void removeMenu() {
+    printAtXY(3, 3, COLOR_WHITE, "          ");
+    printAtXY(3, 4, COLOR_WHITE, "           ");
+    printAtXY(3, 5, COLOR_WHITE, "                ");
+    printAtXY(3, 6, COLOR_WHITE, "                 ");
+}
+
 boolean gameMenu() {
     printAtXY(6, 4, COLOR_WHITE, "Snake");
     printAtXY(3, 5, COLOR_WHITE, "A/a to auto play");
@@ -424,15 +433,11 @@ boolean gameMenu() {
     switch (tmp) {
         case 'a':
         case 'A':
-            printAtXY(6, 4, COLOR_WHITE, "      ");
-            printAtXY(3, 5, COLOR_WHITE, "                ");
-            printAtXY(3, 6, COLOR_WHITE, "                 ");
+            removeMenu();
             return true;
         case 's':
         case 'S':
-            printAtXY(6, 4, COLOR_WHITE, "      ");
-            printAtXY(3, 5, COLOR_WHITE, "                ");
-            printAtXY(3, 6, COLOR_WHITE, "                 ");
+            removeMenu();
             return false;
         default:
             break;
@@ -449,7 +454,7 @@ direction turn(snake *head, direction *_direction) {
     } else return turn(head, _direction + 1);
 }
 
-void autoPlay(snake *head, int food_position[2]) {//根据蛇蛇身和食物判断该怎么走，边界为全局变量，直接读取
+void autoPlay(snake *head, int food_position[2]) {//根据蛇蛇身和食物判断该怎么走，边界为全局变量，直接读取//自动算法差点把我弄崩溃，最先是直接if判断，后来思路完全乱了。。。
     int horizontal = head->position[_X] - food_position[_X];
     int vertical = head->position[_Y] - food_position[_Y];
     if (horizontal == 0) {//一条竖线上
